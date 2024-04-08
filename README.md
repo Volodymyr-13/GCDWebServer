@@ -1,3 +1,6 @@
+## Note: You can copy GCDWebUploader.bundle and modify it in your apps main Bundle.
+
+
 Overview
 ========
 

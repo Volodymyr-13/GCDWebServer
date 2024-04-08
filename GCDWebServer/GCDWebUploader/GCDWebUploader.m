@@ -64,13 +64,20 @@ NS_ASSUME_NONNULL_END
 
 @dynamic delegate;
 
-- (instancetype)initWithUploadDirectory:(NSString*)path {
+- (instancetype)initWithUploadDirectory:(NSString*)path customSiteBundle:(NSBundle  * _Nullable ) customBundle{
   if ((self = [super init])) {
-    NSString* bundlePath = [SWIFTPM_MODULE_BUNDLE pathForResource:@"GCDWebUploader" ofType:@"bundle"];
-    if (bundlePath == nil) {
-      return nil;
+    NSBundle* siteBundle;
+      
+    if (customBundle == nil){
+        NSString* bundlePath = [SWIFTPM_MODULE_BUNDLE pathForResource:@"GCDWebUploader" ofType:@"bundle"];
+        if (bundlePath == nil) {
+            return nil;
+        }
+        siteBundle = [NSBundle bundleWithPath:bundlePath];
+    }else{
+        siteBundle = customBundle;
     }
-    NSBundle* siteBundle = [NSBundle bundleWithPath:bundlePath];
+
     if (siteBundle == nil) {
       return nil;
     }
