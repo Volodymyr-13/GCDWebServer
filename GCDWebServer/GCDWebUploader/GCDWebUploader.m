@@ -297,31 +297,37 @@ NS_ASSUME_NONNULL_END
 }
 
 - (GCDWebServerResponse*)uploadFile:(GCDWebServerMultiPartFormRequest*)request {
-  NSRange range = [[request.headers objectForKey:@"Accept"] rangeOfString:@"application/json" options:NSCaseInsensitiveSearch];
-  NSString* contentType = (range.location != NSNotFound ? @"application/json" : @"text/plain; charset=utf-8");  // Required when using iFrame transport (see https://github.com/blueimp/jQuery-File-Upload/wiki/Setup)
-
-  GCDWebServerMultiPartFile* file = [request firstFileForControlName:@"files[]"];
-  if ((!_allowHiddenItems && [file.fileName hasPrefix:@"."]) || ![self _checkFileExtension:file.fileName]) {
-    return [GCDWebServerErrorResponse responseWithClientError:kGCDWebServerHTTPStatusCode_Forbidden message:@"Uploaded file name \"%@\" is not allowed", file.fileName];
-  }
-  NSString* relativePath = [[request firstArgumentForControlName:@"path"] string];
-  NSString* absolutePath = [self _uniquePathForPath:[[_uploadDirectory stringByAppendingPathComponent:GCDWebServerNormalizePath(relativePath)] stringByAppendingPathComponent:file.fileName]];
-
-  if (![self shouldUploadFileAtPath:absolutePath withTemporaryFile:file.temporaryPath]) {
-    return [GCDWebServerErrorResponse responseWithClientError:kGCDWebServerHTTPStatusCode_Forbidden message:@"Uploading file \"%@\" to \"%@\" is not permitted", file.fileName, relativePath];
-  }
-
-  NSError* error = nil;
-  if (![[NSFileManager defaultManager] moveItemAtPath:file.temporaryPath toPath:absolutePath error:&error]) {
-    return [GCDWebServerErrorResponse responseWithServerError:kGCDWebServerHTTPStatusCode_InternalServerError underlyingError:error message:@"Failed moving uploaded file to \"%@\"", relativePath];
-  }
-
-  if ([self.delegate respondsToSelector:@selector(webUploader:didUploadFileAtPath:)]) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-      [self.delegate webUploader:self didUploadFileAtPath:absolutePath];
-    });
-  }
-  return [GCDWebServerDataResponse responseWithJSONObject:@{} contentType:contentType];
+    NSRange range = [[request.headers objectForKey:@"Accept"] rangeOfString:@"application/json" options:NSCaseInsensitiveSearch];
+    NSString* contentType = (range.location != NSNotFound ? @"application/json" : @"text/plain; charset=utf-8");  // Required when using iFrame transport (see https://github.com/blueimp/jQuery-File-Upload/wiki/Setup)
+    
+    GCDWebServerMultiPartFile* file = [request firstFileForControlName:@"files[]"];
+    if ((!_allowHiddenItems && [file.fileName hasPrefix:@"."]) || ![self _checkFileExtension:file.fileName]) {
+        return [GCDWebServerErrorResponse responseWithClientError:kGCDWebServerHTTPStatusCode_Forbidden message:@"Uploaded file name \"%@\" is not allowed", file.fileName];
+    }
+    NSString* relativePath = [[request firstArgumentForControlName:@"path"] string];
+//    NSString* absolutePath = [self _uniquePathForPath:[[_uploadDirectory stringByAppendingPathComponent:GCDWebServerNormalizePath(relativePath)] stringByAppendingPathComponent:file.fileName]];
+    NSString* absolutePath = [[_uploadDirectory stringByAppendingPathComponent:GCDWebServerNormalizePath(relativePath)] stringByAppendingPathComponent:file.fileName];
+    
+    // Check if file already exists at the destination path
+    if ([[NSFileManager defaultManager] fileExistsAtPath:absolutePath]) {
+        return [GCDWebServerErrorResponse responseWithClientError:kGCDWebServerHTTPStatusCode_Forbidden message:@"File \"%@\" already exists!", file.fileName];
+    }
+    
+    if (![self shouldUploadFileAtPath:absolutePath withTemporaryFile:file.temporaryPath]) {
+        return [GCDWebServerErrorResponse responseWithClientError:kGCDWebServerHTTPStatusCode_Forbidden message:@"Uploading file \"%@\" to \"%@\" is not permitted", file.fileName, relativePath];
+    }
+    
+    NSError* error = nil;
+    if (![[NSFileManager defaultManager] moveItemAtPath:file.temporaryPath toPath:absolutePath error:&error]) {
+        return [GCDWebServerErrorResponse responseWithServerError:kGCDWebServerHTTPStatusCode_InternalServerError underlyingError:error message:@"Failed moving uploaded file to \"%@\"", relativePath];
+    }
+    
+    if ([self.delegate respondsToSelector:@selector(webUploader:didUploadFileAtPath:)]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self.delegate webUploader:self didUploadFileAtPath:absolutePath];
+        });
+    }
+    return [GCDWebServerDataResponse responseWithJSONObject:@{} contentType:contentType];
 }
 
 - (GCDWebServerResponse*)moveItem:(GCDWebServerURLEncodedFormRequest*)request {
