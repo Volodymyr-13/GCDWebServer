@@ -368,34 +368,65 @@ NS_ASSUME_NONNULL_END
   return [GCDWebServerDataResponse responseWithJSONObject:@{}];
 }
 
+// Helper method to collect URLs of all files in a directory recursively
+- (void)collectFileURLsInDirectory:(NSString*)directoryPath fileURLs:(NSMutableArray*)fileURLs {
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    NSDirectoryEnumerator *enumerator = [fileManager enumeratorAtPath:directoryPath];
+    
+    NSString *filePath;
+    while ((filePath = [enumerator nextObject])) {
+        NSString *fullPath = [directoryPath stringByAppendingPathComponent:filePath];
+        BOOL isDirectory = NO;
+        if ([fileManager fileExistsAtPath:fullPath isDirectory:&isDirectory] && !isDirectory) {
+            [fileURLs addObject:[NSURL fileURLWithPath:fullPath]];
+        }
+    }
+}
+
+// Helper method to delete items and collect URLs of the deleted files
+- (BOOL)deleteItemAtPath:(NSString*)path error:(NSError**)error fileURLs:(NSMutableArray*)fileURLs {
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    BOOL isDirectory = NO;
+    if ([fileManager fileExistsAtPath:path isDirectory:&isDirectory]) {
+        if (isDirectory) {
+            [self collectFileURLsInDirectory:path fileURLs:fileURLs];
+        } else {
+            [fileURLs addObject:[NSURL fileURLWithPath:path]];
+        }
+        return [fileManager removeItemAtPath:path error:error];
+    }
+    return NO;
+}
+
 - (GCDWebServerResponse*)deleteItem:(GCDWebServerURLEncodedFormRequest*)request {
-  NSString* relativePath = [request.arguments objectForKey:@"path"];
-  NSString* absolutePath = [_uploadDirectory stringByAppendingPathComponent:GCDWebServerNormalizePath(relativePath)];
-  BOOL isDirectory = NO;
-  if (![[NSFileManager defaultManager] fileExistsAtPath:absolutePath isDirectory:&isDirectory]) {
-    return [GCDWebServerErrorResponse responseWithClientError:kGCDWebServerHTTPStatusCode_NotFound message:@"\"%@\" does not exist", relativePath];
-  }
+    NSString* relativePath = [request.arguments objectForKey:@"path"];
+    NSString* absolutePath = [_uploadDirectory stringByAppendingPathComponent:GCDWebServerNormalizePath(relativePath)];
+    BOOL isDirectory = NO;
+    if (![[NSFileManager defaultManager] fileExistsAtPath:absolutePath isDirectory:&isDirectory]) {
+        return [GCDWebServerErrorResponse responseWithClientError:kGCDWebServerHTTPStatusCode_NotFound message:@"\"%@\" does not exist", relativePath];
+    }
 
-  NSString* itemName = [absolutePath lastPathComponent];
-  if (([itemName hasPrefix:@"."] && !_allowHiddenItems) || (!isDirectory && ![self _checkFileExtension:itemName])) {
-    return [GCDWebServerErrorResponse responseWithClientError:kGCDWebServerHTTPStatusCode_Forbidden message:@"Deleting item name \"%@\" is not allowed", itemName];
-  }
+    NSString* itemName = [absolutePath lastPathComponent];
+    if (([itemName hasPrefix:@"."] && !_allowHiddenItems) || (!isDirectory && ![self _checkFileExtension:itemName])) {
+        return [GCDWebServerErrorResponse responseWithClientError:kGCDWebServerHTTPStatusCode_Forbidden message:@"Deleting item name \"%@\" is not allowed", itemName];
+    }
 
-  if (![self shouldDeleteItemAtPath:absolutePath]) {
-    return [GCDWebServerErrorResponse responseWithClientError:kGCDWebServerHTTPStatusCode_Forbidden message:@"Deleting \"%@\" is not permitted", relativePath];
-  }
+    if (![self shouldDeleteItemAtPath:absolutePath]) {
+        return [GCDWebServerErrorResponse responseWithClientError:kGCDWebServerHTTPStatusCode_Forbidden message:@"Deleting \"%@\" is not permitted", relativePath];
+    }
 
-  NSError* error = nil;
-  if (![[NSFileManager defaultManager] removeItemAtPath:absolutePath error:&error]) {
-    return [GCDWebServerErrorResponse responseWithServerError:kGCDWebServerHTTPStatusCode_InternalServerError underlyingError:error message:@"Failed deleting \"%@\"", relativePath];
-  }
+    NSError* error = nil;
+    NSMutableArray *deletedFileURLs = [NSMutableArray array];
+    if (![self deleteItemAtPath:absolutePath error:&error fileURLs:deletedFileURLs]) {
+        return [GCDWebServerErrorResponse responseWithServerError:kGCDWebServerHTTPStatusCode_InternalServerError underlyingError:error message:@"Failed deleting \"%@\"", relativePath];
+    }
 
-  if ([self.delegate respondsToSelector:@selector(webUploader:didDeleteItemAtPath:)]) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-      [self.delegate webUploader:self didDeleteItemAtPath:absolutePath];
-    });
-  }
-  return [GCDWebServerDataResponse responseWithJSONObject:@{}];
+    if ([self.delegate respondsToSelector:@selector(webUploader:didDeleteItemsAtPaths:)]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self.delegate webUploader:self didDeleteItemsAtPaths:deletedFileURLs];
+        });
+    }
+    return [GCDWebServerDataResponse responseWithJSONObject:@{}];
 }
 
 - (GCDWebServerResponse*)createDirectory:(GCDWebServerURLEncodedFormRequest*)request {

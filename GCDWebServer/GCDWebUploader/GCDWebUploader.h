@@ -63,7 +63,7 @@ NS_ASSUME_NONNULL_BEGIN
  *  This method is called whenever a directory has been created.
  */
 - (void)webUploader:(GCDWebUploader*)uploader didCreateDirectoryAtPath:(NSString*)path;
-
+- (void)webUploader:(id)uploader didDeleteItemsAtPaths:(NSArray<NSURL *> *)paths;
 @end
 
 /**
